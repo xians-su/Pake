@@ -9,7 +9,7 @@ on:
       app:
         description: "Config name in my-apps/ without .json"
         required: true
-        default: "discord"
+        default: "canva"
       refs:
         description: "JSON list of tw93/Pake refs"
         required: true
