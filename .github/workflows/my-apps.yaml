@@ -46,8 +46,6 @@ jobs:
     needs: list
     name: ${{ matrix.app }}
     runs-on: macos-latest
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -83,13 +81,26 @@ jobs:
           path: "*.dmg"
           retention-days: 7
 
+  # Separate job so the build (which runs third-party build code) only ever
+  # holds a read-only token; only this job can write to the release.
+  publish:
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: out
+          pattern: "*-macOS"
+          merge-multiple: true
       - name: Publish to my-apps release
         env:
           GH_TOKEN: ${{ github.token }}
-          APP: ${{ matrix.app }}
         run: |
+          ls -la out
           gh release view my-apps -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create my-apps -R "$GITHUB_REPOSITORY" --title "My Apps" \
-              --notes "Personal Pake builds from my-apps/*.json" --latest=false || true
-          cp ./*.dmg "$APP.dmg"
-          gh release upload my-apps "$APP.dmg" -R "$GITHUB_REPOSITORY" --clobber
+              --notes "Personal Pake builds from my-apps/*.json" --latest=false
+          gh release upload my-apps out/*.dmg -R "$GITHUB_REPOSITORY" --clobber
