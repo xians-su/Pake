@@ -1,0 +1,77 @@
+name: Smoke Test My App
+
+# Diagnostic: build one app from my-apps/ with several Pake versions on several
+# macOS versions, start it on the runner and report whether it stays up.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Config name in my-apps/ without .json"
+        required: true
+        default: "discord"
+      refs:
+        description: "JSON list of tw93/Pake refs"
+        required: true
+        default: '["V3.19.0","main"]'
+      runners:
+        description: "JSON list of runner labels"
+        required: true
+        default: '["macos-15","macos-26"]'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: ${{ matrix.ref }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ fromJson(inputs.refs) }}
+        os: ${{ fromJson(inputs.runners) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: tw93/Pake
+          ref: ${{ matrix.ref }}
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          path: _cfg
+          persist-credentials: false
+      - uses: ./.github/actions/setup-env
+        with:
+          mode: build
+      - run: pnpm run cli:build
+      - name: Build
+        timeout-minutes: 40
+        env:
+          APP: ${{ inputs.app }}
+        run: node dist/cli.js --config "_cfg/my-apps/$APP.json"
+      - name: Launch and watch
+        run: |
+          sw_vers
+          DMG=$(ls ./*.dmg | head -1)
+          hdiutil attach "$DMG" -nobrowse -mountpoint /tmp/mnt
+          APPDIR=$(ls -d /tmp/mnt/*.app | head -1)
+          cp -R "$APPDIR" /tmp/app.app
+          hdiutil detach /tmp/mnt || true
+          codesign -dv --entitlements - /tmp/app.app 2>&1 | head -30 || true
+          BIN=$(ls /tmp/app.app/Contents/MacOS/* | head -1)
+          echo "binary: $BIN"
+          "$BIN" > /tmp/app.log 2>&1 &
+          PID=$!
+          sleep 30
+          echo "----- app output -----"; cat /tmp/app.log || true
+          echo "----- crash reports -----"
+          ls -la ~/Library/Logs/DiagnosticReports/ 2>&1 || true
+          for f in ~/Library/Logs/DiagnosticReports/*; do
+            [ -f "$f" ] && { echo "== $f"; head -c 6000 "$f"; echo; }
+          done
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "RESULT: ALIVE after 30s"; kill "$PID"
+          else
+            wait "$PID"; echo "RESULT: DEAD, exit code $?"; exit 1
+          fi

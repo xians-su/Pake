@@ -15,6 +15,10 @@ on:
         description: "Universal binary (Intel + Apple Silicon)"
         type: boolean
         default: false
+      pake_ref:
+        description: "Pake version to build with: 'release' (latest upstream release tag), or a tag/branch/sha of tw93/Pake"
+        required: true
+        default: "release"
 
 permissions:
   contents: read
@@ -24,6 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       apps: ${{ steps.pick.outputs.apps }}
+      ref: ${{ steps.ref.outputs.ref }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -41,6 +46,18 @@ jobs:
             test -f "my-apps/$n.json" || { echo "::error::my-apps/$n.json not found"; exit 1; }
           done
           echo "apps=$(printf '%s\n' $names | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+      # Build from a tagged upstream release by default, not from whatever
+      # unreleased commits happen to be on the branch.
+      - id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT_REF: ${{ inputs.pake_ref }}
+        run: |
+          if [ "$WANT_REF" = "release" ]; then
+            WANT_REF=$(gh api repos/tw93/Pake/releases/latest --jq .tag_name)
+          fi
+          echo "Building with tw93/Pake@$WANT_REF"
+          echo "ref=$WANT_REF" >> "$GITHUB_OUTPUT"
 
   build:
     needs: list
@@ -51,8 +68,17 @@ jobs:
       matrix:
         app: ${{ fromJson(needs.list.outputs.apps) }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout Pake source
+        uses: actions/checkout@v6
         with:
+          repository: tw93/Pake
+          ref: ${{ needs.list.outputs.ref }}
+          persist-credentials: false
+
+      - name: Checkout app configs
+        uses: actions/checkout@v6
+        with:
+          path: _cfg
           persist-credentials: false
 
       - name: Setup Node.js Environment
@@ -69,7 +95,7 @@ jobs:
           APP: ${{ matrix.app }}
           MULTI_ARCH: ${{ inputs.multi_arch }}
         run: |
-          ARGS=(--config "my-apps/$APP.json")
+          ARGS=(--config "_cfg/my-apps/$APP.json")
           if [ "$MULTI_ARCH" = "true" ]; then ARGS+=(--multi-arch); fi
           node dist/cli.js "${ARGS[@]}"
           ls -la *.dmg
