@@ -16,7 +16,7 @@ on:
         type: boolean
         default: false
       pake_ref:
-        description: "Pake version to build with: 'release' (latest upstream release tag), or a tag/branch/sha of tw93/Pake"
+        description: "Pake version to build with: 'release' (the commit published to npm as pake-cli@latest), or a tag/branch/sha of tw93/Pake"
         required: true
         default: "release"
 
@@ -54,7 +54,10 @@ jobs:
           WANT_REF: ${{ inputs.pake_ref }}
         run: |
           if [ "$WANT_REF" = "release" ]; then
-            WANT_REF=$(gh api repos/tw93/Pake/releases/latest --jq .tag_name)
+            # The published npm package is what Pake users actually run; GitHub
+            # release tags lag several patch versions behind it.
+            WANT_REF=$(npm view pake-cli gitHead)
+            echo "pake-cli $(npm view pake-cli version) on npm"
           fi
           echo "Building with tw93/Pake@$WANT_REF"
           echo "ref=$WANT_REF" >> "$GITHUB_OUTPUT"
