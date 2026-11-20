@@ -1,0 +1,9 @@
+{
+  "url": "https://chatgpt.com/",
+  "name": "ChatGPT",
+  "width": 1200,
+  "height": 820,
+  "newWindow": true,
+  "microphone": true,
+  "safeDomain": "chatgpt.com,openai.com"
+}

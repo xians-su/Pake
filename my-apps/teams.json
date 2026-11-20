@@ -1,0 +1,10 @@
+{
+  "url": "https://teams.microsoft.com/",
+  "name": "Microsoft Teams",
+  "width": 1280,
+  "height": 820,
+  "newWindow": true,
+  "camera": true,
+  "microphone": true,
+  "safeDomain": "microsoft.com,microsoftonline.com,live.com,office.com,office.net,cloud.microsoft,microsoft365.com,sharepoint.com"
+}

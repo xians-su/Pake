@@ -1,0 +1,95 @@
+name: Build My Apps
+
+# Personal addition to this fork: builds every app described in my-apps/*.json
+# (or the ones named in the input) for macOS and publishes the DMGs to the
+# "my-apps" release so the download links do not expire.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "Config names in my-apps/ without .json, comma-separated, or 'all'"
+        required: true
+        default: "all"
+      multi_arch:
+        description: "Universal binary (Intel + Apple Silicon)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-24.04
+    outputs:
+      apps: ${{ steps.pick.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: pick
+        env:
+          WANT: ${{ inputs.apps }}
+        run: |
+          if [ "$WANT" = "all" ]; then
+            names=$(ls my-apps/*.json | xargs -n1 basename | sed 's/\.json$//')
+          else
+            names=$(printf '%s' "$WANT" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$')
+          fi
+          for n in $names; do
+            test -f "my-apps/$n.json" || { echo "::error::my-apps/$n.json not found"; exit 1; }
+          done
+          echo "apps=$(printf '%s\n' $names | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: list
+    name: ${{ matrix.app }}
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.list.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js Environment
+        uses: ./.github/actions/setup-env
+        with:
+          mode: build
+
+      - name: Build CLI
+        run: pnpm run cli:build
+
+      - name: Build App
+        timeout-minutes: 40
+        env:
+          APP: ${{ matrix.app }}
+          MULTI_ARCH: ${{ inputs.multi_arch }}
+        run: |
+          ARGS=(--config "my-apps/$APP.json")
+          if [ "$MULTI_ARCH" = "true" ]; then ARGS+=(--multi-arch); fi
+          node dist/cli.js "${ARGS[@]}"
+          ls -la *.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.app }}-macOS
+          path: "*.dmg"
+          retention-days: 7
+
+      - name: Publish to my-apps release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP: ${{ matrix.app }}
+        run: |
+          gh release view my-apps -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create my-apps -R "$GITHUB_REPOSITORY" --title "My Apps" \
+              --notes "Personal Pake builds from my-apps/*.json" --latest=false || true
+          cp ./*.dmg "$APP.dmg"
+          gh release upload my-apps "$APP.dmg" -R "$GITHUB_REPOSITORY" --clobber

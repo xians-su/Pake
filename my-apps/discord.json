@@ -1,0 +1,10 @@
+{
+  "url": "https://discord.com/app",
+  "name": "Discord",
+  "width": 1280,
+  "height": 820,
+  "newWindow": true,
+  "camera": true,
+  "microphone": true,
+  "safeDomain": "discord.com"
+}
